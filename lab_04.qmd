@@ -22,6 +22,21 @@ This lab accompanies the Week 4 notes, [*Data Wrangling I - Loading, Cleaning an
 
 ::: {.solution}
 
+```{r}
+#| message: false
+library(tidyverse)
+read_csv("data/part1/data1.csv") |> head()
+read_tsv("data/part1/data2.txt") |> head()
+read_delim("data/part1/data3", delim = ";") |> head()
+```
+
+The chunk option `#| message: false` (see the Week 3 notes) only takes effect when the document is rendered; if you run the code in the console the messages will still appear.
+As an aside, you can also hide the column messages for an individual `read_*` call by passing `show_col_types = FALSE`, which works wherever the code is run:
+
+```{r}
+read_csv("data/part1/data1.csv", show_col_types = FALSE) |> head()
+```
+
 :::
 
 ### Task 1b: Checking Loaded Data
@@ -38,6 +53,31 @@ The file `data3` contains information about books in a bookshop.
 
 ::: {.solution}
 
+```{r}
+books <- read_delim(
+    "data/part1/data3",
+    delim = ";",
+    col_types = cols(ISBN = col_character()),
+    show_col_types = FALSE
+)
+books |> select(Title, ISBN)
+```
+
+`ISBN` was originally read as a number (`<dbl>`), because it consists only of digits.
+However it is an identifier, not a quantity: arithmetic on it is meaningless, and any leading zeros would be lost.
+It should be stored as text.
+
+```{r}
+read_csv2("data/part1/data3", show_col_types = FALSE) |>
+    select(Title, PriceUSD, AvgRating) |>
+    head()
+```
+
+`read_csv2` is designed for the convention used in much of Europe, where `;` is the delimiter and `,` is the *decimal mark* (e.g. `14,99`).
+It therefore treats the `.` in `14.99` as a thousands separator, so the price `14.99` becomes `1499` and the rating `4.2` becomes `42`.
+Notice that `R` did not give an error; the only warning was an info message that is easy to ignore.
+This is why you should always check your loaded data against the raw file!
+
 :::
 
 The file `data1.csv` contains student scores from two tests, with their average.
@@ -48,6 +88,33 @@ The file `data1.csv` contains student scores from two tests, with their average.
 
 ::: {.solution}
 
+```{r}
+students <- read_csv("data/part1/data1.csv", show_col_types = FALSE)
+students
+```
+
+Missing scores are recorded as empty fields (e.g. `85.0,,85.00`), which `read_csv` converts to `NA`.
+The empty `notes` for Ivy Chen (`""`) has also been read as `NA`.
+
+```{r}
+students |>
+    summarise(mean_score1 = mean(score1), mean_score1_narm = mean(score1, na.rm = TRUE))
+```
+
+Any calculation involving an `NA` gives `NA`, since `R` can't know what the missing value is.
+Setting `na.rm = TRUE` removes the missing values before computing the mean.
+
+```{r}
+students |>
+    filter(name != "Henry Zhao") |>
+    summarise(mean_score1 = mean(score1, na.rm = TRUE), mean_average = mean(average))
+```
+
+Henry's notes say he was "Absent", so his scores of `0` really mean "did not take the test", and should arguably be missing (`NA`) rather than `0`.
+Including him lowers the mean of `score1` from about 80 to about 71.
+Whether that is right depends on the question: for "how well did students who sat the test do?" he should be excluded, but for "what marks were awarded?" a `0` might be correct.
+This kind of problem can't be detected by `R`; you have to look at the data.
+
 :::
 
 The file `data2.txt` contains readings from air quality monitoring stations.
@@ -56,11 +123,27 @@ The file `data2.txt` contains readings from air quality monitoring stations.
 
 ::: {.solution}
 
+```{r}
+air_quality <- read_tsv("data/part1/data2.txt", show_col_types = FALSE)
+
+air_quality |>
+    select(station_id, ends_with("_ug_m3"))
+```
+
+The two particulate columns both end in `_ug_m3`, so `ends_with` selects them without listing them by hand.
+
 :::
 
 - [ ] How many readings are there in the file, and from how many different neighbourhoods? (Hint: look at the "Other Summarise Functions" tip in the notes.)
 
 ::: {.solution}
+
+```{r}
+air_quality |>
+    summarise(n_readings = n(), n_neighbourhoods = n_distinct(neighborhood))
+```
+
+`n()` counts the rows, while `n_distinct()` counts the number of unique values in a column.
 
 :::
 
@@ -68,6 +151,27 @@ The file `data2.txt` contains readings from air quality monitoring stations.
 - [ ] Compute the mean `pm2_5_ug_m3` over all readings, and over only the readings with status `OK`. Which would you report, and why?
 
 ::: {.solution}
+
+```{r}
+air_quality |>
+    filter(status != "OK") |>
+    select(station_id, neighborhood, pm2_5_ug_m3, pm10_ug_m3, sensor_uptime_pct, status)
+```
+
+Station `AQ-012` has status `ERROR`, a low uptime, and no pollution readings at all (`NA`).
+The two `MAINT` readings, both in Harbor, do have values, but a sensor under maintenance may not be reliable.
+
+```{r}
+air_quality |>
+    summarise(mean_pm2_5 = mean(pm2_5_ug_m3, na.rm = TRUE))
+
+air_quality |>
+    filter(status == "OK") |>
+    summarise(mean_pm2_5 = mean(pm2_5_ug_m3))
+```
+
+Removing the `ERROR` reading happens automatically with `na.rm = TRUE`, but the `MAINT` readings are only removed if we filter on `status`.
+Reporting the mean over `OK` readings only is the safer choice, but whatever you choose, you should say which readings were excluded and why.
 
 :::
 
@@ -105,11 +209,20 @@ Try to format your code nicely so it is readable.
 
 ::: {.solution}
 
+```{r}
+diamonds <- diamonds |> mutate(volume = x * y * z)
+```
 :::
 
 - [ ] Create a `tibble` containing only the numeric columns of `diamonds`. (Hint: look at the tidyselect callout in the notes.)
 
 ::: {.solution}
+
+```{r}
+diamonds |> select(where(is.numeric))
+```
+
+`where(is.numeric)` selects every column for which `is.numeric` returns `TRUE`, dropping the factor columns `cut`, `color` and `clarity`.
 
 :::
 
@@ -125,6 +238,48 @@ Now answer the following research questions.
 
 ::: {.solution}
 
+```{r}
+diamonds |>
+    summarise(mean_price = mean(price))
+
+diamonds |>
+    arrange(desc(price)) |>
+    select(price, volume) |>
+    head(5)
+
+diamonds |>
+    group_by(cut) |>
+    summarise(mean_price = mean(price), min_price = min(price), max_price = max(price)) |>
+    arrange(desc(mean_price))
+
+diamonds |>
+    group_by(cut) |>
+    summarise(mean_price = mean(price), mean_carat = mean(carat)) |>
+    arrange(desc(mean_price))
+```
+
+Ideal diamonds are, on average, the smallest, and size has a much bigger effect on price than cut does.
+So Ideal diamonds are cheaper on average not *because* of their cut, but because they tend to be smaller.
+When two variables (here cut and carat) are related like this, comparing averages for one of them can be very misleading; this is called *confounding*.
+The price-per-carat in the next question partly adjusts for size.
+
+```{r}
+diamonds |>
+    mutate(price_per_carat = price / carat) |>
+    group_by(cut) |>
+    summarise(mean_price_per_carat = mean(price_per_carat)) |>
+    arrange(desc(mean_price_per_carat))
+
+diamonds |>
+    count(cut, color, name = "n") |>
+    arrange(desc(n)) |>
+    head()
+
+diamonds |>
+    filter(volume > mean(volume) + 3 * sd(volume)) |>
+    arrange(desc(volume))
+```
+
 :::
 
 Before trusting these results, it is worth checking whether they make sense. Since all diamonds have the same density, heavier diamonds are larger, so `carat` and `volume` should be closely related.
@@ -136,11 +291,66 @@ Before trusting these results, it is worth checking whether they make sense. Sin
 
 ::: {.solution}
 
+```{r}
+diamonds <- diamonds |> mutate(volume_per_carat = volume / carat)
+
+diamonds |>
+    filter(volume_per_carat == 0) |>
+    select(carat, x, y, z, volume, volume_per_carat)
+
+diamonds |>
+    filter(volume_per_carat > 0) |>
+    arrange(volume_per_carat) |>
+    select(carat, x, y, z, volume, volume_per_carat) |>
+    head(10)
+
+diamonds |>
+    arrange(desc(volume_per_carat)) |>
+    select(carat, x, y, z, volume, volume_per_carat) |>
+    head(10)
+```
+
+Most diamonds have a `volume_per_carat` of around `r round(median(diamonds$volume_per_carat))`, but there are some clear errors:
+
+- 20 diamonds have at least one dimension recorded as 0, giving a volume (and ratio) of 0.
+- Three diamonds have `z` equal to their `carat` (e.g. `carat = 1.07`, `z = 1.07`), which looks like the wrong value was copied into the `z` column.
+- Three diamonds have a `y` or `z` value of over 30mm, which looks like a typing error (e.g. `58.9` instead of `5.89`). These are the "largest" diamonds from the previous question!
+
+The other diamonds with unusual ratios (e.g. around 90 or 320) are less clear-cut: they could be errors, or genuinely unusually-shaped diamonds. Choosing where to draw the line is a judgement call.
+
+```{r}
+diamonds_clean <- diamonds |>
+    filter(volume_per_carat > 100, volume_per_carat < 250)
+nrow(diamonds) - nrow(diamonds_clean)
+
+diamonds_clean |>
+    filter(volume > mean(volume) + 3 * sd(volume)) |>
+    arrange(desc(volume))
+```
+
+We removed `r nrow(diamonds) - nrow(diamonds_clean)` diamonds, and now find *more* unusually large diamonds than before.
+This is because the few enormous erroneous volumes inflated the standard deviation, raising the threshold for a diamond to count as "unusual".
+The largest diamonds are now genuinely large (4--5 carats).
+This shows how sensitive the mean and standard deviation are to a small number of bad values, and why you should always sanity-check your data.
+
 :::
 
 - [ ] **Extension:** Find the most expensive diamond of each cut.
 
 ::: {.solution}
+
+```{r}
+diamonds |>
+    group_by(cut) |>
+    filter(price == max(price)) |>
+    ungroup() |>
+    arrange(cut)
+```
+
+After `group_by(cut)`, `max(price)` is computed separately *within each cut*, so the `filter` keeps the most expensive diamond of each cut rather than the single most expensive diamond overall.
+Unlike `summarise`, `filter` does not remove any grouping, so we use `ungroup()` afterwards.
+If two diamonds of the same cut tied for the highest price, both would be kept.
+Notice that the most expensive Good diamond has `z = 0`: it is one of the errors we found earlier! Its price may well be correct, but its dimensions are not.
 
 :::
 
@@ -155,6 +365,19 @@ However, not all students take all assessments, and assessments the student has 
 
 ::: {.solution}
 
+```{r}
+#| message: false
+read_csv("data/part3/assessment.csv")
+```
+
+The table is not tidy.
+Each observation is one student's score on one assessment, and the variables are the student, the semester, the assessment and the score.
+
+- *Each variable is a column*: the semester and the assessment are variables, but their values (e.g. `Semester1`, `A1`) are stored in the column *names* rather than in columns of their own.
+- *Each observation is a row*: each row contains up to 8 observations (one per assessment) rather than one.
+
+Each cell does contain a single value, so the third rule is satisfied, for now!
+
 :::
 
 - [ ] Tidy the table: pivot into long format with one row per student and assessment, and drop missing scores.
@@ -162,11 +385,43 @@ However, not all students take all assessments, and assessments the student has 
 
 ::: {.solution}
 
+```{r}
+#| message: false
+student_data <- read_csv("data/part3/assessment.csv")
+
+student_data_long <- student_data |>
+    pivot_longer(
+        cols = -student_id,
+        names_to = "assessment",
+        values_to = "score"
+    ) |>
+    drop_na(score)
+student_means <- student_data_long |>
+    group_by(student_id) |>
+    summarise(mean_score = mean(score), n_assessments = n(), .groups = "drop") |>
+    arrange(desc(mean_score))
+student_means |> head()
+```
 :::
 
 - [ ] Redo the pivot, this time using `starts_with` to choose the columns to pivot. Check you get the same result. Suppose a new column `student_name` were added to the file: which of the two approaches would still work, and why?
 
 ::: {.solution}
+
+```{r}
+student_data |>
+    pivot_longer(
+        cols = starts_with("Semester"),
+        names_to = "assessment",
+        values_to = "score"
+    ) |>
+    drop_na(score)
+```
+
+Both approaches give the same result here.
+However, `-student_id` means "every column except `student_id`", so a new `student_name` column would be pivoted too, mixing names in with the scores (in fact `pivot_longer` would give an error, since it can't combine text and numbers in one column).
+`starts_with("Semester")` only picks out the assessment columns, so it would keep working.
+Choosing columns by what they *are*, rather than by what they are not, is usually more robust.
 
 :::
 
@@ -178,17 +433,53 @@ separated by an `_`.
 - [ ] Create a wide table with one row per student, and two new columns containing the average score in Semester 1 and Semester 2.
 
 ::: {.solution}
-
+```{r}
+student_data_split <- student_data_long |>
+    separate_wider_delim(assessment, delim = "_", names = c("semester", "assessment"))
+student_data_split |> head(10)
+student_data_wide <- student_data_split |>
+    group_by(student_id, semester) |>
+    summarise(mean_score = mean(score), .groups = "drop") |>
+    pivot_wider(names_from = semester, values_from = mean_score)
+student_data_wide
+```
 :::
 
 - [ ] Add a column `improvement` to the wide table showing how much each student's average score changed from Semester 1 to Semester 2. Which students improved the most, and which declined the most?
 
 ::: {.solution}
+```{r}
+student_improvement <- student_data_wide |>
+    mutate(improvement = Semester2 - Semester1)
 
+student_improvement |>
+    arrange(desc(improvement)) |>
+    head()
+
+student_improvement |>
+    arrange(improvement) |>
+    head()
+```
+
+Having one column per semester makes this a simple `mutate`; in the long format we would first have to match up each student's two semester averages.
 :::
 
 - [ ] **Extension:** We tidied this dataset in two steps: `pivot_longer` followed by `separate_wider_delim`. Can you do both in a single call to `pivot_longer`? (Hint: look at the `names_sep` argument in `?pivot_longer`.)
 
 ::: {.solution}
+```{r}
+student_data_onestep <- student_data |>
+    pivot_longer(
+        cols = starts_with("Semester"),
+        names_to = c("semester", "assessment"),
+        names_sep = "_",
+        values_to = "score"
+    ) |>
+    drop_na(score)
+student_data_onestep |> head(10)
 
+identical(student_data_onestep, student_data_split)
+```
+
+Giving `names_to` two names and setting `names_sep = "_"` tells `pivot_longer` to split each column name at the `_` as it pivots, so the result is identical to the two-step version.
 :::
